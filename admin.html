@@ -1,0 +1,184 @@
+
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>PixelFishBot Admin</title>
+  <style>
+    * { box-sizing: border-box; }
+    body {
+      margin: 0; padding: 20px;
+      min-height: 100vh; display: grid; place-items: center;
+      background: #101827; color: #f4f7fb;
+      font-family: Arial, sans-serif;
+    }
+    main {
+      width: 100%; max-width: 440px; padding: 26px;
+      border: 1px solid #334155; border-radius: 18px;
+      background: #192438;
+    }
+    h1 { margin-top: 0; }
+    p { color: #bdc8d8; line-height: 1.5; }
+    input, select, button {
+      width: 100%; padding: 13px; margin: 9px 0;
+      border-radius: 9px; font-size: 16px;
+    }
+    input, select {
+      color: white; background: #101827;
+      border: 1px solid #53627a;
+    }
+    button {
+      border: 0; background: #35c98b;
+      color: #092318; font-weight: bold;
+    }
+    button:disabled { opacity: .6; }
+    .secondary { background: #334155; color: white; }
+    .hidden { display: none; }
+    #message, #codeOutput { overflow-wrap: anywhere; }
+    #codeOutput {
+      padding: 14px; background: #101827;
+      border-radius: 9px; font-weight: bold;
+      font-size: 19px; text-align: center;
+    }
+    small { color: #91a0b5; }
+  </style>
+</head>
+<body>
+<main>
+  <h1>🐟 PixelFishBot Admin</h1>
+  <p>Sign in to generate download codes.</p>
+
+  <form id="loginForm">
+    <input id="email" type="email" placeholder="Admin email" required>
+    <input id="password" type="password" placeholder="Password" required>
+    <button id="loginButton" type="submit">Sign In</button>
+  </form>
+
+  <section id="adminPanel" class="hidden">
+    <p>Signed in. Generate a new one-time download code.</p>
+
+    <label for="validity">Code expiration</label>
+    <select id="validity">
+      <option value="1">1 hour</option>
+      <option value="24" selected>1 day</option>
+      <option value="168">7 days</option>
+      <option value="720">30 days</option>
+      <option value="8760">365 days</option>
+    </select>
+
+    <button id="generateButton" type="button">Generate Code</button>
+
+    <section id="result" class="hidden">
+      <p>Your new code:</p>
+      <div id="codeOutput"></div>
+      <button id="copyButton" type="button">Copy Code</button>
+      <p id="expiry"></p>
+    </section>
+
+    <button id="logoutButton" class="secondary" type="button">
+      Sign Out
+    </button>
+  </section>
+
+  <p id="message" role="status"></p>
+  <small>Keep this page and your admin login private.</small>
+</main>
+
+<script type="module">
+  import { createClient } from
+    "https://esm.sh/@supabase/supabase-js@2";
+
+  const SUPABASE_URL =
+    "https://zlyhvpgfqlhbxjpaupri.supabase.co";
+
+  // Replace this with your public publishable or anon key.
+  const SUPABASE_PUBLIC_KEY = "PASTE_YOUR_PUBLIC_KEY_HERE";
+
+  const supabase = createClient(
+    SUPABASE_URL,
+    SUPABASE_PUBLIC_KEY
+  );
+
+  const loginForm = document.getElementById("loginForm");
+  const adminPanel = document.getElementById("adminPanel");
+  const message = document.getElementById("message");
+  const result = document.getElementById("result");
+  const codeOutput = document.getElementById("codeOutput");
+  const expiry = document.getElementById("expiry");
+  const generateButton = document.getElementById("generateButton");
+
+  function showMessage(text) {
+    message.textContent = text;
+  }
+
+  function showSignedIn(signedIn) {
+    loginForm.classList.toggle("hidden", signedIn);
+    adminPanel.classList.toggle("hidden", !signedIn);
+    if (!signedIn) result.classList.add("hidden");
+  }
+
+  const { data: sessionData } = await supabase.auth.getSession();
+  showSignedIn(!!sessionData.session);
+
+  supabase.auth.onAuthStateChange((_event, session) => {
+    showSignedIn(!!session);
+  });
+
+  loginForm.addEventListener("submit", async (event) => {
+    event.preventDefault();
+    showMessage("Signing in...");
+
+    const { error } = await supabase.auth.signInWithPassword({
+      email: document.getElementById("email").value.trim(),
+      password: document.getElementById("password").value
+    });
+
+    showMessage(error ? error.message : "Signed in successfully.");
+  });
+
+  generateButton.addEventListener("click", async () => {
+    generateButton.disabled = true;
+    result.classList.add("hidden");
+    showMessage("Generating code...");
+
+    try {
+      const hours = Number(document.getElementById("validity").value);
+
+      const { data, error } = await supabase.rpc(
+        "generate_download_code",
+        { p_validity_hours: hours }
+      );
+
+      if (error) throw error;
+      if (!data || !data.length) throw new Error("No code was returned.");
+
+      codeOutput.textContent = data[0].download_code;
+      expiry.textContent =
+        "Expires: " + new Date(data[0].expires_at).toLocaleString();
+
+      result.classList.remove("hidden");
+      showMessage("Code created successfully.");
+    } catch (error) {
+      showMessage(error.message || "Could not generate a code.");
+    } finally {
+      generateButton.disabled = false;
+    }
+  });
+
+  document.getElementById("copyButton").addEventListener("click", async () => {
+    try {
+      await navigator.clipboard.writeText(codeOutput.textContent);
+      showMessage("Code copied!");
+    } catch {
+      showMessage("Copy failed. Select and copy the code manually.");
+    }
+  });
+
+  document.getElementById("logoutButton").addEventListener("click", async () => {
+    const { error } = await supabase.auth.signOut();
+    showMessage(error ? error.message : "Signed out.");
+  });
+</script>
+</body>
+</html>
